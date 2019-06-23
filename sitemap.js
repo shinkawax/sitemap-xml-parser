@@ -16,13 +16,6 @@ class SitemapXMLParser {
         this.delayTime = options.delay ? options.delay : 3000;
         this.limit = options.limit ? options.limit : 5;
         this.urlArray = [];
-        this.count = 0;
-    }
-
-    doit() {
-        (async () => {
-            await this.fetch();
-        })();
     }
 
     async fetch() {
@@ -49,8 +42,6 @@ class SitemapXMLParser {
      * @param {*} xml
      */
     async getURLFromXML(xml) {
-        let self = this;//再帰関数になるためselfにする
-
         let sitemapIndexData = [];
         if (xml.sitemapindex
             && xml.sitemapindex.sitemap
