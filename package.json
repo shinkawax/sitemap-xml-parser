@@ -1,4 +1,29 @@
 {
+  "name": "sitemap-xml-parser",
+  "version": "1.0.0",
+  "main": "index.js",
+  "private": true,
+  "devDependencies": {},
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/shinkawax/sitemap-xml-parser.git"
+  },
+  "keywords": [
+    "sitemap",
+    "xml",
+    "parse",
+    "gz"
+  ],
+  "author": "shinkawax",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/shinkawax/sitemap-xml-parser/issues"
+  },
+  "homepage": "https://github.com/shinkawax/sitemap-xml-parser#readme",
+  "description": "It parses xml based on sitemap.xml and gets all files described in sitemap. Supports gz format",
   "dependencies": {
     "bluebird": "^3.5.5",
     "request": "^2.88.0",
