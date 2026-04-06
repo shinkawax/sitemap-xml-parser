@@ -1,32 +1,34 @@
 {
   "name": "sitemap-xml-parser",
-  "version": "0.0.2",
+  "version": "1.0.0",
+  "description": "Parses sitemap XML files and returns all listed URLs. Supports sitemap index files and gzip (.gz) compression.",
   "main": "index.js",
-  "private": false,
-  "devDependencies": {},
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+  "bin": {
+    "sitemap-xml-parser": "bin/cli.js"
   },
+  "files": [
+    "index.js",
+    "lib",
+    "bin"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "test": "node test/test.js"
+  },
+  "keywords": ["sitemap", "xml", "parse", "gzip", "sitemap-index", "cli"],
+  "author": "shinkawax",
+  "license": "MIT",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/shinkawax/sitemap-xml-parser.git"
   },
-  "keywords": [
-    "sitemap",
-    "xml",
-    "parse",
-    "gz"
-  ],
-  "author": "shinkawax",
-  "license": "MIT",
   "bugs": {
     "url": "https://github.com/shinkawax/sitemap-xml-parser/issues"
   },
   "homepage": "https://github.com/shinkawax/sitemap-xml-parser#readme",
-  "description": "It parses xml based on sitemap.xml and gets all files described in sitemap. Supports gz format",
   "dependencies": {
-    "bluebird": "^3.5.5",
-    "request": "^2.88.0",
-    "xml2js": "^0.4.19"
+    "xml2js": "^0.6.2"
   }
 }
