@@ -63,6 +63,13 @@ npx sitemap-xml-parser https://example.com/sitemap.xml > urls.txt 2> errors.log
 | `tsv`               | —          | —       | Output results as tab-separated values. Prints a header row (`loc`, `lastmod`, `changefreq`, `priority`) followed by one row per entry. Missing fields are output as empty strings. **CLI only.** |
 | `count`             | —          | —       | Print only the total number of URLs instead of listing them. **CLI only.** |
 
+## Features
+
+- Follows Sitemap Index files recursively, including nested indexes (Index within an Index)
+- Automatically decompresses gzip: supports both `.gz` URLs and `Content-Encoding: gzip` responses
+- Batch processing: fetches `limit` child sitemaps in parallel per batch, then waits `delay` ms after each batch completes
+- Automatically follows redirects (301/302/303/307/308) up to 5 hops; errors beyond that are reported via `onError`
+
 ## Usage
 
 ```js
@@ -123,10 +130,3 @@ const parser = new SitemapXMLParser('https://example.com/sitemap.xml', {
 
 Fields other than `loc` (`lastmod`, `changefreq`, `priority`, etc.) are included only when present in the source XML.
 
-## Limitations
-
-- **HTTP redirects are followed up to 5 times.** Status codes 301, 302, 303, 307, and 308 are handled automatically by following the `Location` header (relative URLs are resolved against the current URL). If the redirect chain exceeds 5 hops, an error is raised via `onError`.
-
-- **Gzip decompression is handled automatically** in two ways: URLs ending in `.gz` are decompressed after download, and responses with a `Content-Encoding: gzip` header are decompressed on the fly.
-
-- **Sitemap index files are followed recursively.** If a sitemap index contains references to other sitemap index files (nested indexes), those are fetched and traversed recursively. `limit` child sitemaps are fetched concurrently per batch; after each batch completes, the process waits `delay` ms before starting the next batch.
