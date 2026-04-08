@@ -11,6 +11,7 @@ function printUsage() {
         '  --delay <ms>    Delay between batches in milliseconds (default: 3000)',
         '  --limit <n>     Concurrent fetches per batch (default: 5)',
         '  --timeout <ms>  Request timeout in milliseconds (default: 30000)',
+        '  --tsv           Output as tab-separated values with a header row',
         '  --help          Show this help message',
         '',
     ].join('\n'));
@@ -20,12 +21,15 @@ function parseArgs(argv) {
     const args = argv.slice(2);
     const opts = { delay: 3000, limit: 5, timeout: 30000 };
     let url = null;
+    let tsv = false;
 
     for (let i = 0; i < args.length; i++) {
         const arg = args[i];
         if (arg === '--help' || arg === '-h') {
             printUsage();
             process.exit(0);
+        } else if (arg === '--tsv') {
+            tsv = true;
         } else if (arg === '--delay') {
             if (++i >= args.length) {
                 process.stderr.write(`Error: --delay requires a value\n`);
@@ -76,24 +80,40 @@ function parseArgs(argv) {
         process.exit(1);
     }
 
-    return { url, opts };
+    return { url, opts, tsv };
 }
 
 (async () => {
-    const { url, opts } = parseArgs(process.argv);
+    const { url, opts, tsv } = parseArgs(process.argv);
+
+    const red   = process.stderr.isTTY ? '\x1b[31m' : '';
+    const reset = process.stderr.isTTY ? '\x1b[0m'  : '';
+
+    if (tsv) {
+        process.stdout.write('loc\tlastmod\tchangefreq\tpriority\n');
+    }
 
     let hasError = false;
     const parser = new SitemapXMLParser(url, {
         ...opts,
+        onEntry: (entry) => {
+            if (tsv) {
+                const loc        = entry.loc?.[0]        ?? '';
+                const lastmod    = entry.lastmod?.[0]    ?? '';
+                const changefreq = entry.changefreq?.[0] ?? '';
+                const priority   = entry.priority?.[0]   ?? '';
+                process.stdout.write(`${loc}\t${lastmod}\t${changefreq}\t${priority}\n`);
+            } else {
+                process.stdout.write(entry.loc[0] + '\n');
+            }
+        },
         onError: (failedUrl, err) => {
             hasError = true;
-            process.stderr.write(`Error: ${failedUrl} — ${err.message}\n`);
+            const msg = err.message.replace(/\r?\n/g, ' ').trim();
+            process.stderr.write(`${red}Error: ${failedUrl} — ${msg}${reset}\n`);
         },
     });
 
-    const entries = await parser.fetch();
-    for (const entry of entries) {
-        process.stdout.write(entry.loc[0] + '\n');
-    }
+    await parser.fetch();
     if (hasError) process.exit(1);
 })();

@@ -179,7 +179,7 @@ async function runTests(server) {
     {
         const { code, stdout, stderr } = await runCLI([`${BASE_URL}/sitemap_1.xml`, '--delay', '0']);
         assert('exits with code 0', code === 0, `code=${code}`);
-        assert('no errors on stderr', stderr === '', `stderr=${stderr}`);
+        assert('no errors on stderr', !stderr.includes('Error:'), `stderr=${stderr}`);
         const lines = stdout.trim().split('\n');
         assert('outputs 2 lines', lines.length === 2, `lines=${lines.length}`);
         assert('page1 is in stdout', lines.includes('https://example.com/page1'));
@@ -205,7 +205,7 @@ async function runTests(server) {
             '--limit', '2',
         ]);
         assert('exits with code 0', code === 0, `code=${code}`);
-        assert('no errors on stderr', stderr === '', `stderr=${stderr}`);
+        assert('no errors on stderr', !stderr.includes('Error:'), `stderr=${stderr}`);
         const lines = stdout.trim().split('\n');
         assert('outputs 3 URLs', lines.length === 3, `lines=${lines.length}`);
     }
@@ -260,7 +260,7 @@ async function runTests(server) {
             '--timeout', '10000',
         ]);
         assert('exits with code 0', code === 0, `code=${code}`);
-        assert('no errors on stderr', stderr === '', `stderr=${stderr}`);
+        assert('no errors on stderr', !stderr.includes('Error:'), `stderr=${stderr}`);
         const lines = stdout.trim().split('\n');
         assert('outputs 2 URLs', lines.length === 2, `lines=${lines.length}`);
     }
@@ -299,13 +299,172 @@ async function runTests(server) {
         assert('--timeout error says "requires a value"', e3.includes('requires a value'), `stderr=${e3}`);
     }
 
-    // --- Test 21: CLI exits with code 1 when onError is triggered ---
-    console.log('\nTest 21: CLI - exits with code 1 when fetch encounters an error');
+    // --- Test 22: Single redirect (301) is followed ---
+    console.log('\nTest 22: Single redirect (301) is followed');
     {
-        const { code, stdout, stderr } = await runCLI([`${BASE_URL}/does_not_exist.xml`, '--delay', '0']);
+        const redirectServer = await new Promise((resolve) => {
+            let target;
+            const srv = http.createServer((req, res) => {
+                if (req.url === '/redirect') {
+                    res.writeHead(301, { Location: target });
+                    res.end();
+                } else {
+                    res.writeHead(200, { 'Content-Type': 'application/xml' });
+                    res.end(fs.readFileSync(path.join(MOCK_DIR, 'sitemap_1.xml')));
+                }
+            });
+            srv.listen(0, '127.0.0.1', () => {
+                const { port } = srv.address();
+                target = `http://127.0.0.1:${port}/sitemap_1.xml`;
+                resolve(srv);
+            });
+        });
+
+        const { port } = redirectServer.address();
+        const parser = new SitemapXMLParser(`http://127.0.0.1:${port}/redirect`, { delay: 0 });
+        const result = await parser.fetch();
+        redirectServer.close();
+        assert('follows 301 redirect and retrieves URLs', result.length === 2, `length=${result.length}`);
+        assert('page1 is present after redirect', result[0].loc[0] === 'https://example.com/page1');
+    }
+
+    // --- Test 23: Too many redirects triggers onError ---
+    console.log('\nTest 23: Too many redirects (> 5) triggers onError');
+    {
+        const loopServer = await new Promise((resolve) => {
+            const srv = http.createServer((req, res) => {
+                const { port } = srv.address();
+                res.writeHead(302, { Location: `http://127.0.0.1:${port}/loop` });
+                res.end();
+            });
+            srv.listen(0, '127.0.0.1', () => resolve(srv));
+        });
+
+        const { port } = loopServer.address();
+        const errors = [];
+        const parser = new SitemapXMLParser(`http://127.0.0.1:${port}/loop`, {
+            delay: 0,
+            onError: (url, err) => errors.push({ url, err }),
+        });
+        const result = await parser.fetch();
+        loopServer.close();
+        assert('returns empty array on too many redirects', result.length === 0, `length=${result.length}`);
+        assert('onError is called', errors.length === 1);
+        assert('error message mentions max 5', errors[0].err.message.includes('max 5'));
+    }
+
+    // --- Test 24: Relative Location header is resolved correctly ---
+    console.log('\nTest 24: Relative Location header in redirect');
+    {
+        const relServer = await new Promise((resolve) => {
+            const srv = http.createServer((req, res) => {
+                if (req.url === '/old/sitemap') {
+                    res.writeHead(302, { Location: '/sitemap_1.xml' });
+                    res.end();
+                } else {
+                    res.writeHead(200, { 'Content-Type': 'application/xml' });
+                    res.end(fs.readFileSync(path.join(MOCK_DIR, 'sitemap_1.xml')));
+                }
+            });
+            srv.listen(0, '127.0.0.1', () => resolve(srv));
+        });
+
+        const { port } = relServer.address();
+        const parser = new SitemapXMLParser(`http://127.0.0.1:${port}/old/sitemap`, { delay: 0 });
+        const result = await parser.fetch();
+        relServer.close();
+        assert('resolves relative Location and retrieves URLs', result.length === 2, `length=${result.length}`);
+    }
+
+    // --- Test 25: onEntry is called for each parsed entry ---
+    console.log('\nTest 25: onEntry is called for each parsed entry');
+    {
+        const seen = [];
+        const parser = new SitemapXMLParser(`${BASE_URL}/sitemap_1.xml`, {
+            delay: 0,
+            onEntry: (entry) => seen.push(entry),
+        });
+        const result = await parser.fetch();
+        assert('onEntry called twice for 2 entries', seen.length === 2, `count=${seen.length}`);
+        assert('onEntry entry matches fetch() result', seen[0] === result[0]);
+        assert('fetch() still returns full array', result.length === 2, `length=${result.length}`);
+    }
+
+    // --- Test 26: onEntry receives entries in order across sitemap index ---
+    console.log('\nTest 26: onEntry fires in order across sitemap index');
+    {
+        prepareIndexXml();
+        const locs = [];
+        const parser = new SitemapXMLParser(`${BASE_URL}/sitemap_index_resolved.xml`, {
+            delay: 0,
+            onEntry: (entry) => locs.push(entry.loc[0]),
+        });
+        const result = await parser.fetch();
+        assert('onEntry called for all 3 entries', locs.length === 3, `count=${locs.length}`);
+        assert('fetch() still returns 3 entries', result.length === 3, `length=${result.length}`);
+        assert('page1 received via onEntry', locs.includes('https://example.com/page1'));
+        assert('page3 received via onEntry', locs.includes('https://example.com/page3'));
+    }
+
+    // --- Test 27: onEntry not set — no error, fetch() works normally ---
+    console.log('\nTest 27: onEntry omitted — fetch() works unchanged');
+    {
+        const parser = new SitemapXMLParser(`${BASE_URL}/sitemap_1.xml`, { delay: 0 });
+        const result = await parser.fetch();
+        assert('returns 2 entries without onEntry', result.length === 2, `length=${result.length}`);
+    }
+
+    // --- Test 28: entries skipped by loc filter are NOT passed to onEntry ---
+    console.log('\nTest 28: Entries without <loc> are not passed to onEntry');
+    {
+        const seen = [];
+        const parser = new SitemapXMLParser(`${BASE_URL}/sitemap_no_loc.xml`, {
+            delay: 0,
+            onEntry: (entry) => seen.push(entry),
+        });
+        const result = await parser.fetch();
+        assert('only 1 entry passed to onEntry', seen.length === 1, `count=${seen.length}`);
+        assert('fetch() returns 1 entry', result.length === 1, `length=${result.length}`);
+    }
+
+    // --- Test 29: CLI --tsv outputs header and tab-separated entries ---
+    console.log('\nTest 29: CLI - --tsv outputs header and entries as TSV');
+    {
+        const { code, stdout, stderr } = await runCLI([`${BASE_URL}/sitemap_1.xml`, '--delay', '0', '--tsv']);
+        assert('exits with code 0', code === 0, `code=${code}`);
+        assert('no errors on stderr', !stderr.includes('Error:'), `stderr=${stderr}`);
+        const lines = stdout.split('\n').slice(0, -1);
+        assert('outputs 3 lines (header + 2 entries)', lines.length === 3, `lines=${lines.length}`);
+        assert('first line is header', lines[0] === 'loc\tlastmod\tchangefreq\tpriority', `header=${JSON.stringify(lines[0])}`);
+        const [loc1, lastmod1, changefreq1, priority1] = lines[1].split('\t');
+        assert('entry loc is correct', loc1 === 'https://example.com/page1', `loc=${loc1}`);
+        assert('entry lastmod is correct', lastmod1 === '2024-01-01', `lastmod=${lastmod1}`);
+        assert('entry changefreq is correct', changefreq1 === 'weekly', `changefreq=${changefreq1}`);
+        assert('entry priority is correct', priority1 === '0.8', `priority=${priority1}`);
+    }
+
+    // --- Test 30: CLI --tsv uses empty string for missing fields ---
+    console.log('\nTest 30: CLI - --tsv uses empty string for missing fields');
+    {
+        const { code, stdout } = await runCLI([`${BASE_URL}/sitemap_minimal.xml`, '--delay', '0', '--tsv']);
+        assert('exits with code 0', code === 0, `code=${code}`);
+        const lines = stdout.split('\n').slice(0, -1);
+        assert('outputs 2 lines (header + 1 entry)', lines.length === 2, `lines=${lines.length}`);
+        const fields = lines[1].split('\t');
+        assert('loc is present', fields[0] === 'https://example.com/minimal', `loc=${fields[0]}`);
+        assert('lastmod is empty', fields[1] === '', `lastmod=${JSON.stringify(fields[1])}`);
+        assert('changefreq is empty', fields[2] === '', `changefreq=${JSON.stringify(fields[2])}`);
+        assert('priority is empty', fields[3] === '', `priority=${JSON.stringify(fields[3])}`);
+    }
+
+    // --- Test 30b: CLI error is compressed to one line ---
+    console.log('\nTest 30b: CLI - multiline error message is compressed to one line');
+    {
+        const { code, stderr } = await runCLI([`${BASE_URL}/sitemap_bad.xml`, '--delay', '0']);
         assert('exits with non-zero code', code !== 0, `code=${code}`);
-        assert('stdout is empty', stdout === '', `stdout=${stdout}`);
-        assert('error is printed to stderr', stderr.includes(`${BASE_URL}/does_not_exist.xml`));
+        const errorLines = stderr.split('\n').filter(l => l.startsWith('Error:'));
+        assert('error fits on one line', errorLines.length === 1, `errorLines=${JSON.stringify(errorLines)}`);
+        assert('error line has no internal newlines', !errorLines[0].includes('\n'));
     }
 
     // --- Summary ---

@@ -3,16 +3,18 @@
   "version": "1.0.0",
   "description": "Parses sitemap XML files and returns all listed URLs. Supports sitemap index files and gzip (.gz) compression.",
   "main": "index.js",
+  "types": "index.d.ts",
   "bin": {
     "sitemap-xml-parser": "bin/cli.js"
   },
   "files": [
     "index.js",
+    "index.d.ts",
     "lib",
     "bin"
   ],
   "engines": {
-    "node": ">=18"
+    "node": ">=20"
   },
   "scripts": {
     "test": "node test/test.js"
