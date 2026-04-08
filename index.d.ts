@@ -1,8 +1,8 @@
 export interface SitemapEntry {
-    loc: string[];
-    lastmod?: string[];
-    changefreq?: string[];
-    priority?: string[];
+    loc: string;
+    lastmod?: string;
+    changefreq?: string;
+    priority?: string;
 }
 
 export interface SitemapOptions {
