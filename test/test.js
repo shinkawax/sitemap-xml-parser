@@ -3,6 +3,7 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const zlib = require('zlib');
 const { spawn } = require('child_process');
 const SitemapXMLParser = require('../index.js');
 
@@ -80,10 +81,10 @@ async function runTests(server) {
         const parser = new SitemapXMLParser(`${BASE_URL}/sitemap_1.xml`, { delay: 0, limit: 5 });
         const result = await parser.fetch();
         assert('retrieves URLs', result.length === 2, `length=${result.length}`);
-        assert('first loc is correct', result[0].loc[0] === 'https://example.com/page1');
-        assert('lastmod is present', result[0].lastmod?.[0] === '2024-01-01');
-        assert('changefreq is present', result[0].changefreq?.[0] === 'weekly');
-        assert('priority is present', result[0].priority?.[0] === '0.8');
+        assert('first loc is correct', result[0].loc === 'https://example.com/page1');
+        assert('lastmod is present', result[0].lastmod === '2024-01-01');
+        assert('changefreq is present', result[0].changefreq === 'weekly');
+        assert('priority is present', result[0].priority === '0.8');
     }
 
     // --- Test 2: Sitemap index (multiple XMLs) ---
@@ -93,7 +94,7 @@ async function runTests(server) {
         const parser = new SitemapXMLParser(`${BASE_URL}/sitemap_index_resolved.xml`, { delay: 0, limit: 5 });
         const result = await parser.fetch();
         assert('total URL count from child sitemaps', result.length === 3, `length=${result.length}`);
-        const locs = result.map(r => r.loc[0]);
+        const locs = result.map(r => r.loc);
         assert('page1 is included', locs.includes('https://example.com/page1'));
         assert('page2 is included', locs.includes('https://example.com/page2'));
         assert('page3 is included', locs.includes('https://example.com/page3'));
@@ -105,7 +106,33 @@ async function runTests(server) {
         const parser = new SitemapXMLParser(`${BASE_URL}/sitemap_2.xml.gz`, { delay: 0, limit: 5 });
         const result = await parser.fetch();
         assert('decompresses gz and retrieves URLs', result.length === 1, `length=${result.length}`);
-        assert('page3 loc is correct', result[0].loc[0] === 'https://example.com/page3');
+        assert('page3 loc is correct', result[0].loc === 'https://example.com/page3');
+    }
+
+    // --- Test 3b: Content-Encoding: gzip decompression ---
+    console.log('\nTest 3b: Content-Encoding: gzip decompression');
+    {
+        const gzipServer = await new Promise((resolve) => {
+            const xml = fs.readFileSync(path.join(MOCK_DIR, 'sitemap_1.xml'));
+            const srv = http.createServer((req, res) => {
+                zlib.gzip(xml, (err, buf) => {
+                    if (err) { res.writeHead(500); res.end(); return; }
+                    res.writeHead(200, {
+                        'Content-Type': 'application/xml',
+                        'Content-Encoding': 'gzip',
+                    });
+                    res.end(buf);
+                });
+            });
+            srv.listen(0, '127.0.0.1', () => resolve(srv));
+        });
+
+        const { port } = gzipServer.address();
+        const parser = new SitemapXMLParser(`http://127.0.0.1:${port}/sitemap.xml`, { delay: 0 });
+        const result = await parser.fetch();
+        gzipServer.close();
+        assert('decompresses Content-Encoding: gzip and retrieves URLs', result.length === 2, `length=${result.length}`);
+        assert('page1 loc is correct', result[0].loc === 'https://example.com/page1');
     }
 
     // --- Test 4: Default option values ---
@@ -159,7 +186,7 @@ async function runTests(server) {
         const parser = new SitemapXMLParser(`${BASE_URL}/sitemap_index_resolved.xml`, { delay: 0, limit: 1 });
         const result = await parser.fetch();
         assert('collects all URLs across multiple batches', result.length === 3, `length=${result.length}`);
-        const locs = result.map(r => r.loc[0]);
+        const locs = result.map(r => r.loc);
         assert('page1 is included', locs.includes('https://example.com/page1'));
         assert('page2 is included', locs.includes('https://example.com/page2'));
         assert('page3 is included', locs.includes('https://example.com/page3'));
@@ -248,7 +275,7 @@ async function runTests(server) {
         const parser = new SitemapXMLParser(`${BASE_URL}/sitemap_no_loc.xml`, { delay: 0 });
         const result = await parser.fetch();
         assert('only entry with loc is returned', result.length === 1, `length=${result.length}`);
-        assert('returned entry has correct loc', result[0].loc[0] === 'https://example.com/page1');
+        assert('returned entry has correct loc', result[0].loc === 'https://example.com/page1');
     }
 
     // --- Test 17: CLI --timeout option is accepted ---
@@ -325,7 +352,7 @@ async function runTests(server) {
         const result = await parser.fetch();
         redirectServer.close();
         assert('follows 301 redirect and retrieves URLs', result.length === 2, `length=${result.length}`);
-        assert('page1 is present after redirect', result[0].loc[0] === 'https://example.com/page1');
+        assert('page1 is present after redirect', result[0].loc === 'https://example.com/page1');
     }
 
     // --- Test 23: Too many redirects triggers onError ---
@@ -397,7 +424,7 @@ async function runTests(server) {
         const locs = [];
         const parser = new SitemapXMLParser(`${BASE_URL}/sitemap_index_resolved.xml`, {
             delay: 0,
-            onEntry: (entry) => locs.push(entry.loc[0]),
+            onEntry: (entry) => locs.push(entry.loc),
         });
         const result = await parser.fetch();
         assert('onEntry called for all 3 entries', locs.length === 3, `count=${locs.length}`);
@@ -523,6 +550,43 @@ async function runTests(server) {
         const { code, stderr } = await runCLI([`${BASE_URL}/sitemap_1.xml`, '--filter']);
         assert('exits with non-zero code', code !== 0, `code=${code}`);
         assert('error message mentions --filter', stderr.includes('--filter'), `stderr=${stderr}`);
+        assert('error says "requires a value"', stderr.includes('requires a value'), `stderr=${stderr}`);
+    }
+
+    // --- Test 37: CLI --filter-regex matches by regex ---
+    console.log('\nTest 37: CLI - --filter-regex returns only matching URLs');
+    {
+        const { code, stdout, stderr } = await runCLI([`${BASE_URL}/sitemap_1.xml`, '--delay', '0', '--filter-regex', 'page[12]']);
+        assert('exits with code 0', code === 0, `code=${code}`);
+        assert('no errors on stderr', !stderr.includes('Error:'), `stderr=${stderr}`);
+        const lines = stdout.trim().split('\n');
+        assert('outputs 2 lines', lines.length === 2, `lines=${lines.length}`);
+        assert('page1 is included', lines.includes('https://example.com/page1'));
+        assert('page2 is included', lines.includes('https://example.com/page2'));
+    }
+
+    // --- Test 38: CLI --filter-regex with no matches outputs nothing ---
+    console.log('\nTest 38: CLI - --filter-regex with no matches outputs nothing');
+    {
+        const { code, stdout, stderr } = await runCLI([`${BASE_URL}/sitemap_1.xml`, '--delay', '0', '--filter-regex', '^https://other']);
+        assert('exits with code 0', code === 0, `code=${code}`);
+        assert('stdout is empty', stdout === '', `stdout=${JSON.stringify(stdout)}`);
+        assert('no errors on stderr', !stderr.includes('Error:'), `stderr=${stderr}`);
+    }
+
+    // --- Test 39: CLI --filter-regex with invalid regex exits non-zero ---
+    console.log('\nTest 39: CLI - --filter-regex with invalid regex exits non-zero');
+    {
+        const { code, stderr } = await runCLI([`${BASE_URL}/sitemap_1.xml`, '--filter-regex', '[invalid']);
+        assert('exits with non-zero code', code !== 0, `code=${code}`);
+        assert('error mentions --filter-regex', stderr.includes('--filter-regex'), `stderr=${stderr}`);
+    }
+
+    // --- Test 40: CLI --filter-regex without value exits non-zero ---
+    console.log('\nTest 40: CLI - --filter-regex without value exits non-zero');
+    {
+        const { code, stderr } = await runCLI([`${BASE_URL}/sitemap_1.xml`, '--filter-regex']);
+        assert('exits with non-zero code', code !== 0, `code=${code}`);
         assert('error says "requires a value"', stderr.includes('requires a value'), `stderr=${stderr}`);
     }
 

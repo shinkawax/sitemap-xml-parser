@@ -8,13 +8,14 @@ function printUsage() {
         'Usage: sitemap-xml-parser <url> [options]',
         '',
         'Options:',
-        '  --delay <ms>    Delay between batches in milliseconds (default: 1000)',
-        '  --limit <n>     Concurrent fetches per batch (default: 10)',
-        '  --timeout <ms>  Request timeout in milliseconds (default: 30000)',
-        '  --filter <str>  Only output URLs that contain <str>',
-        '  --tsv           Output as tab-separated values with a header row',
-        '  --count         Print only the total number of URLs',
-        '  --help          Show this help message',
+        '  --delay <ms>           Delay between batches in milliseconds (default: 1000)',
+        '  --limit <n>            Concurrent fetches per batch (default: 10)',
+        '  --timeout <ms>         Request timeout in milliseconds (default: 30000)',
+        '  --filter <str>         Only output URLs that contain <str>',
+        '  --filter-regex <regex> Only output URLs matching the given regular expression',
+        '  --tsv                  Output as tab-separated values with a header row',
+        '  --count                Print only the total number of URLs',
+        '  --help                 Show this help message',
         '',
     ].join('\n'));
 }
@@ -26,6 +27,7 @@ function parseArgs(argv) {
     let tsv = false;
     let count = false;
     let filter = null;
+    let filterRegex = null;
 
     for (let i = 0; i < args.length; i++) {
         const arg = args[i];
@@ -42,6 +44,17 @@ function parseArgs(argv) {
                 process.exit(1);
             }
             filter = args[i];
+        } else if (arg === '--filter-regex') {
+            if (++i >= args.length) {
+                process.stderr.write(`Error: --filter-regex requires a value\n`);
+                process.exit(1);
+            }
+            try {
+                filterRegex = new RegExp(args[i]);
+            } catch (e) {
+                process.stderr.write(`Error: --filter-regex invalid regular expression: ${e.message}\n`);
+                process.exit(1);
+            }
         } else if (arg === '--delay') {
             if (++i >= args.length) {
                 process.stderr.write(`Error: --delay requires a value\n`);
@@ -92,11 +105,11 @@ function parseArgs(argv) {
         process.exit(1);
     }
 
-    return { url, opts, tsv, count, filter };
+    return { url, opts, tsv, count, filter, filterRegex };
 }
 
 (async () => {
-    const { url, opts, tsv, count, filter } = parseArgs(process.argv);
+    const { url, opts, tsv, count, filter, filterRegex } = parseArgs(process.argv);
 
     const red   = process.stderr.isTTY ? '\x1b[31m' : '';
     const reset = process.stderr.isTTY ? '\x1b[0m'  : '';
@@ -108,14 +121,17 @@ function parseArgs(argv) {
     let hasError = false;
     let filteredCount = 0;
 
+    const hasFilter = filter !== null || filterRegex !== null;
+
     // onEntry is only skipped when count mode has no filter (result.length is sufficient).
-    const needsOnEntry = !count || filter !== null;
+    const needsOnEntry = !count || hasFilter;
 
     const parser = new SitemapXMLParser(url, {
         ...opts,
         onEntry: needsOnEntry ? (entry) => {
-            const loc = entry.loc?.[0] ?? '';
+            const loc = entry.loc ?? '';
             if (filter !== null && !loc.includes(filter)) return;
+            if (filterRegex !== null && !filterRegex.test(loc)) return;
 
             if (count) {
                 filteredCount++;
@@ -123,9 +139,9 @@ function parseArgs(argv) {
             }
 
             if (tsv) {
-                const lastmod    = entry.lastmod?.[0]    ?? '';
-                const changefreq = entry.changefreq?.[0] ?? '';
-                const priority   = entry.priority?.[0]   ?? '';
+                const lastmod    = entry.lastmod    ?? '';
+                const changefreq = entry.changefreq ?? '';
+                const priority   = entry.priority   ?? '';
                 process.stdout.write(`${loc}\t${lastmod}\t${changefreq}\t${priority}\n`);
             } else {
                 process.stdout.write(loc + '\n');
@@ -139,6 +155,6 @@ function parseArgs(argv) {
     });
 
     const result = await parser.fetch();
-    if (count) process.stdout.write((filter !== null ? filteredCount : result.length) + '\n');
+    if (count) process.stdout.write((hasFilter ? filteredCount : result.length) + '\n');
     if (hasError) process.exit(1);
 })();

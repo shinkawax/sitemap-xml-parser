@@ -36,6 +36,9 @@ npx sitemap-xml-parser https://example.com/sitemap.xml --count
 # Filter by substring
 npx sitemap-xml-parser https://example.com/sitemap.xml --filter "blog"
 
+# Filter by regular expression
+npx sitemap-xml-parser https://example.com/sitemap.xml --filter-regex "blog/[0-9]{4}/"
+
 # Filter and count
 npx sitemap-xml-parser https://example.com/sitemap.xml --filter "blog" --count
 
@@ -48,16 +51,17 @@ npx sitemap-xml-parser https://example.com/sitemap.xml > urls.txt 2> errors.log
 
 ## Options
 
-| Option      | Type       | Default | Description                                                                 |
-|-------------|------------|---------|-----------------------------------------------------------------------------|
-| `delay`     | `number`   | `1000`  | Milliseconds to wait between batches when following a sitemap index. Default is 1000 to avoid overloading the target server; set to `0` to disable. CLI: `--delay`   |
-| `limit`     | `number`   | `10`    | Number of child sitemaps to fetch concurrently per batch. CLI: `--limit`              |
-| `timeout`   | `number`   | `30000` | Milliseconds before a request is aborted. CLI: `--timeout`                            |
-| `onError`   | `function` | —       | Called as `onError(url, error)` when a URL fails. The URL is skipped regardless. **Library only.** |
-| `onEntry`   | `function` | —       | Called as `onEntry(entry)` each time a URL entry is parsed. `entry` has the same shape as the objects returned by `fetch()`. **Library only.** |
-| `filter`    | `string`   | —       | Only output URLs whose `loc` contains the given string (substring match). Can be combined with `--count` or `--tsv`. **CLI only.** |
-| `tsv`       | —          | —       | Output results as tab-separated values. Prints a header row (`loc`, `lastmod`, `changefreq`, `priority`) followed by one row per entry. Missing fields are output as empty strings. **CLI only.** |
-| `count`     | —          | —       | Print only the total number of URLs instead of listing them. **CLI only.** |
+| Option              | Type       | Default | Description                                                                 |
+|---------------------|------------|---------|-----------------------------------------------------------------------------|
+| `delay`             | `number`   | `1000`  | Milliseconds to wait between batches when following a sitemap index. `limit` URLs are fetched in parallel per batch; after each batch completes, the process waits `delay` ms before starting the next. Set to `0` to disable. CLI: `--delay`   |
+| `limit`             | `number`   | `10`    | Number of child sitemaps to fetch concurrently per batch. CLI: `--limit`              |
+| `timeout`           | `number`   | `30000` | Milliseconds before a request is aborted. CLI: `--timeout`                            |
+| `onError`           | `function` | —       | Called as `onError(url, error)` when a URL fails. The URL is skipped regardless. **Library only.** |
+| `onEntry`           | `function` | —       | Called as `onEntry(entry)` each time a URL entry is parsed. `entry` has the same shape as the objects returned by `fetch()`. **Library only.** |
+| `filter`            | `string`   | —       | Only output URLs whose `loc` contains the given string (substring match). Can be combined with `--count` or `--tsv`. **CLI only.** |
+| `filter-regex`      | `string`   | —       | Only output URLs whose `loc` matches the given regular expression (evaluated with `new RegExp(value)`). Invalid patterns exit with a non-zero code and an error on stderr. Can be combined with `--count` or `--tsv`. **CLI only.** |
+| `tsv`               | —          | —       | Output results as tab-separated values. Prints a header row (`loc`, `lastmod`, `changefreq`, `priority`) followed by one row per entry. Missing fields are output as empty strings. **CLI only.** |
+| `count`             | —          | —       | Print only the total number of URLs instead of listing them. **CLI only.** |
 
 ## Usage
 
@@ -69,9 +73,22 @@ const parser = new SitemapXMLParser('https://example.com/sitemap.xml');
 (async () => {
     const urls = await parser.fetch();
     urls.forEach(entry => {
-        console.log(entry.loc[0]);
+        console.log(entry.loc);
     });
 })();
+```
+
+Or with ES modules:
+
+```js
+import SitemapXMLParser from 'sitemap-xml-parser';
+
+const parser = new SitemapXMLParser('https://example.com/sitemap.xml');
+
+const urls = await parser.fetch();
+urls.forEach(entry => {
+    console.log(entry.loc);
+});
 ```
 
 ### Error handling with `onError`
@@ -93,19 +110,23 @@ const parser = new SitemapXMLParser('https://example.com/sitemap.xml', {
 ```js
 [
   {
-    loc:        ['https://example.com/page1'],
-    lastmod:    ['2024-01-01'],
-    changefreq: ['weekly'],
-    priority:   ['0.8'],
+    loc:        'https://example.com/page1',
+    lastmod:    '2024-01-01',
+    changefreq: 'weekly',
+    priority:   '0.8',
   },
   // ...
 ]
 ```
 
-All field values are arrays (xml2js convention). Use `entry.loc[0]` to get the URL string, `entry.lastmod?.[0]` for optional fields, and so on.
+`loc` is always a string. Use `entry.loc` to get the URL. Optional fields (`lastmod`, `changefreq`, `priority`) are strings when present, or `undefined` when absent from the source XML.
 
 Fields other than `loc` (`lastmod`, `changefreq`, `priority`, etc.) are included only when present in the source XML.
 
 ## Limitations
 
 - **HTTP redirects are followed up to 5 times.** Status codes 301, 302, 303, 307, and 308 are handled automatically by following the `Location` header (relative URLs are resolved against the current URL). If the redirect chain exceeds 5 hops, an error is raised via `onError`.
+
+- **Gzip decompression is handled automatically** in two ways: URLs ending in `.gz` are decompressed after download, and responses with a `Content-Encoding: gzip` header are decompressed on the fly.
+
+- **Sitemap index files are followed recursively.** If a sitemap index contains references to other sitemap index files (nested indexes), those are fetched and traversed recursively. `limit` child sitemaps are fetched concurrently per batch; after each batch completes, the process waits `delay` ms before starting the next batch.
