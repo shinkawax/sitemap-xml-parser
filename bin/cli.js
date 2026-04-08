@@ -8,10 +8,12 @@ function printUsage() {
         'Usage: sitemap-xml-parser <url> [options]',
         '',
         'Options:',
-        '  --delay <ms>    Delay between batches in milliseconds (default: 3000)',
-        '  --limit <n>     Concurrent fetches per batch (default: 5)',
+        '  --delay <ms>    Delay between batches in milliseconds (default: 1000)',
+        '  --limit <n>     Concurrent fetches per batch (default: 10)',
         '  --timeout <ms>  Request timeout in milliseconds (default: 30000)',
+        '  --filter <str>  Only output URLs that contain <str>',
         '  --tsv           Output as tab-separated values with a header row',
+        '  --count         Print only the total number of URLs',
         '  --help          Show this help message',
         '',
     ].join('\n'));
@@ -19,9 +21,11 @@ function printUsage() {
 
 function parseArgs(argv) {
     const args = argv.slice(2);
-    const opts = { delay: 3000, limit: 5, timeout: 30000 };
+    const opts = { delay: 1000, limit: 10, timeout: 30000 };
     let url = null;
     let tsv = false;
+    let count = false;
+    let filter = null;
 
     for (let i = 0; i < args.length; i++) {
         const arg = args[i];
@@ -30,6 +34,14 @@ function parseArgs(argv) {
             process.exit(0);
         } else if (arg === '--tsv') {
             tsv = true;
+        } else if (arg === '--count') {
+            count = true;
+        } else if (arg === '--filter') {
+            if (++i >= args.length) {
+                process.stderr.write(`Error: --filter requires a value\n`);
+                process.exit(1);
+            }
+            filter = args[i];
         } else if (arg === '--delay') {
             if (++i >= args.length) {
                 process.stderr.write(`Error: --delay requires a value\n`);
@@ -80,33 +92,45 @@ function parseArgs(argv) {
         process.exit(1);
     }
 
-    return { url, opts, tsv };
+    return { url, opts, tsv, count, filter };
 }
 
 (async () => {
-    const { url, opts, tsv } = parseArgs(process.argv);
+    const { url, opts, tsv, count, filter } = parseArgs(process.argv);
 
     const red   = process.stderr.isTTY ? '\x1b[31m' : '';
     const reset = process.stderr.isTTY ? '\x1b[0m'  : '';
 
-    if (tsv) {
+    if (tsv && !count) {
         process.stdout.write('loc\tlastmod\tchangefreq\tpriority\n');
     }
 
     let hasError = false;
+    let filteredCount = 0;
+
+    // onEntry is only skipped when count mode has no filter (result.length is sufficient).
+    const needsOnEntry = !count || filter !== null;
+
     const parser = new SitemapXMLParser(url, {
         ...opts,
-        onEntry: (entry) => {
+        onEntry: needsOnEntry ? (entry) => {
+            const loc = entry.loc?.[0] ?? '';
+            if (filter !== null && !loc.includes(filter)) return;
+
+            if (count) {
+                filteredCount++;
+                return;
+            }
+
             if (tsv) {
-                const loc        = entry.loc?.[0]        ?? '';
                 const lastmod    = entry.lastmod?.[0]    ?? '';
                 const changefreq = entry.changefreq?.[0] ?? '';
                 const priority   = entry.priority?.[0]   ?? '';
                 process.stdout.write(`${loc}\t${lastmod}\t${changefreq}\t${priority}\n`);
             } else {
-                process.stdout.write(entry.loc[0] + '\n');
+                process.stdout.write(loc + '\n');
             }
-        },
+        } : null,
         onError: (failedUrl, err) => {
             hasError = true;
             const msg = err.message.replace(/\r?\n/g, ' ').trim();
@@ -114,6 +138,7 @@ function parseArgs(argv) {
         },
     });
 
-    await parser.fetch();
+    const result = await parser.fetch();
+    if (count) process.stdout.write((filter !== null ? filteredCount : result.length) + '\n');
     if (hasError) process.exit(1);
 })();

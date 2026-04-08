@@ -112,8 +112,8 @@ async function runTests(server) {
     console.log('\nTest 4: Default option values');
     {
         const parser = new SitemapXMLParser(`${BASE_URL}/sitemap_1.xml`, {});
-        assert('delayTime defaults to 3000', parser.delayTime === 3000);
-        assert('limit defaults to 5', parser.limit === 5);
+        assert('delayTime defaults to 1000', parser.delayTime === 1000);
+        assert('limit defaults to 10', parser.limit === 10);
         assert('timeout defaults to 30000', parser.timeout === 30000);
     }
 
@@ -465,6 +465,65 @@ async function runTests(server) {
         const errorLines = stderr.split('\n').filter(l => l.startsWith('Error:'));
         assert('error fits on one line', errorLines.length === 1, `errorLines=${JSON.stringify(errorLines)}`);
         assert('error line has no internal newlines', !errorLines[0].includes('\n'));
+    }
+
+    // --- Test 31: CLI --filter matches substring of loc ---
+    console.log('\nTest 31: CLI - --filter returns only matching URLs');
+    {
+        const { code, stdout, stderr } = await runCLI([`${BASE_URL}/sitemap_1.xml`, '--delay', '0', '--filter', 'page1']);
+        assert('exits with code 0', code === 0, `code=${code}`);
+        assert('no errors on stderr', !stderr.includes('Error:'), `stderr=${stderr}`);
+        const lines = stdout.trim().split('\n');
+        assert('outputs 1 line', lines.length === 1, `lines=${lines.length}`);
+        assert('matched URL is page1', lines[0] === 'https://example.com/page1', `line=${lines[0]}`);
+    }
+
+    // --- Test 32: CLI --filter with no matches exits 0 and outputs nothing ---
+    console.log('\nTest 32: CLI - --filter with no matches outputs nothing');
+    {
+        const { code, stdout, stderr } = await runCLI([`${BASE_URL}/sitemap_1.xml`, '--delay', '0', '--filter', 'blog']);
+        assert('exits with code 0', code === 0, `code=${code}`);
+        assert('stdout is empty', stdout === '', `stdout=${JSON.stringify(stdout)}`);
+        assert('no errors on stderr', !stderr.includes('Error:'), `stderr=${stderr}`);
+    }
+
+    // --- Test 33: CLI --filter matches multiple URLs ---
+    console.log('\nTest 33: CLI - --filter matching multiple URLs');
+    {
+        const { code, stdout } = await runCLI([`${BASE_URL}/sitemap_1.xml`, '--delay', '0', '--filter', 'page']);
+        assert('exits with code 0', code === 0, `code=${code}`);
+        const lines = stdout.trim().split('\n');
+        assert('outputs 2 lines', lines.length === 2, `lines=${lines.length}`);
+        assert('page1 is included', lines.includes('https://example.com/page1'));
+        assert('page2 is included', lines.includes('https://example.com/page2'));
+    }
+
+    // --- Test 34: CLI --filter --count returns filtered count ---
+    console.log('\nTest 34: CLI - --filter --count returns filtered count');
+    {
+        const { code, stdout } = await runCLI([`${BASE_URL}/sitemap_1.xml`, '--delay', '0', '--filter', 'page1', '--count']);
+        assert('exits with code 0', code === 0, `code=${code}`);
+        assert('outputs count of 1', stdout.trim() === '1', `stdout=${JSON.stringify(stdout)}`);
+    }
+
+    // --- Test 35: CLI --filter --tsv outputs header and filtered entries ---
+    console.log('\nTest 35: CLI - --filter --tsv outputs filtered entries as TSV');
+    {
+        const { code, stdout } = await runCLI([`${BASE_URL}/sitemap_1.xml`, '--delay', '0', '--filter', 'page1', '--tsv']);
+        assert('exits with code 0', code === 0, `code=${code}`);
+        const lines = stdout.split('\n').slice(0, -1);
+        assert('outputs 2 lines (header + 1 entry)', lines.length === 2, `lines=${lines.length}`);
+        assert('first line is header', lines[0] === 'loc\tlastmod\tchangefreq\tpriority', `header=${JSON.stringify(lines[0])}`);
+        assert('entry loc is page1', lines[1].split('\t')[0] === 'https://example.com/page1');
+    }
+
+    // --- Test 36: CLI --filter without value exits non-zero ---
+    console.log('\nTest 36: CLI - --filter without value exits non-zero');
+    {
+        const { code, stderr } = await runCLI([`${BASE_URL}/sitemap_1.xml`, '--filter']);
+        assert('exits with non-zero code', code !== 0, `code=${code}`);
+        assert('error message mentions --filter', stderr.includes('--filter'), `stderr=${stderr}`);
+        assert('error says "requires a value"', stderr.includes('requires a value'), `stderr=${stderr}`);
     }
 
     // --- Summary ---
