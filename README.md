@@ -8,6 +8,57 @@ Parses sitemap XML files and returns all listed URLs. Supports sitemap index fil
 npm install sitemap-xml-parser
 ```
 
+## CLI
+
+Run without installing via `npx`:
+
+```sh
+npx sitemap-xml-parser <url> [options]
+```
+
+Or, after installing globally (`npm install -g sitemap-xml-parser`):
+
+```sh
+sitemap-xml-parser <url> [options]
+```
+
+Fetched URLs are printed to stdout, one per line. Errors are printed to stderr. See [Options](#options) for available flags.
+
+## Examples
+
+```sh
+# Print all URLs
+npx sitemap-xml-parser https://example.com/sitemap.xml
+
+# Count URLs
+npx sitemap-xml-parser https://example.com/sitemap.xml --count
+
+# Filter by substring
+npx sitemap-xml-parser https://example.com/sitemap.xml --filter "blog"
+
+# Filter and count
+npx sitemap-xml-parser https://example.com/sitemap.xml --filter "blog" --count
+
+# Output as TSV
+npx sitemap-xml-parser https://example.com/sitemap.xml --tsv > urls.tsv
+
+# Save URLs to a file, errors to a log
+npx sitemap-xml-parser https://example.com/sitemap.xml > urls.txt 2> errors.log
+```
+
+## Options
+
+| Option      | Type       | Default | Description                                                                 |
+|-------------|------------|---------|-----------------------------------------------------------------------------|
+| `delay`     | `number`   | `1000`  | Milliseconds to wait between batches when following a sitemap index. Default is 1000 to avoid overloading the target server; set to `0` to disable. CLI: `--delay`   |
+| `limit`     | `number`   | `10`    | Number of child sitemaps to fetch concurrently per batch. CLI: `--limit`              |
+| `timeout`   | `number`   | `30000` | Milliseconds before a request is aborted. CLI: `--timeout`                            |
+| `onError`   | `function` | —       | Called as `onError(url, error)` when a URL fails. The URL is skipped regardless. **Library only.** |
+| `onEntry`   | `function` | —       | Called as `onEntry(entry)` each time a URL entry is parsed. `entry` has the same shape as the objects returned by `fetch()`. **Library only.** |
+| `filter`    | `string`   | —       | Only output URLs whose `loc` contains the given string (substring match). Can be combined with `--count` or `--tsv`. **CLI only.** |
+| `tsv`       | —          | —       | Output results as tab-separated values. Prints a header row (`loc`, `lastmod`, `changefreq`, `priority`) followed by one row per entry. Missing fields are output as empty strings. **CLI only.** |
+| `count`     | —          | —       | Print only the total number of URLs instead of listing them. **CLI only.** |
+
 ## Usage
 
 ```js
@@ -35,17 +86,6 @@ const parser = new SitemapXMLParser('https://example.com/sitemap.xml', {
 });
 ```
 
-## Options
-
-| Option      | Type       | Default | Description                                                                 |
-|-------------|------------|---------|-----------------------------------------------------------------------------|
-| `delay`     | `number`   | `3000`  | Milliseconds to wait between batches when following a sitemap index. Default is 3000 to avoid overloading the target server; set to `0` to disable. CLI: `--delay`   |
-| `limit`     | `number`   | `5`     | Number of child sitemaps to fetch concurrently per batch. CLI: `--limit`              |
-| `timeout`   | `number`   | `30000` | Milliseconds before a request is aborted. CLI: `--timeout`                            |
-| `onError`   | `function` | —       | Called as `onError(url, error)` when a URL fails. The URL is skipped regardless. **Library only.** |
-| `onEntry`   | `function` | —       | Called as `onEntry(entry)` each time a URL entry is parsed. `entry` has the same shape as the objects returned by `fetch()`. **Library only.** |
-| `tsv`     | —          | —       | Output results as tab-separated values. Prints a header row (`loc`, `lastmod`, `changefreq`, `priority`) followed by one row per entry. Missing fields are output as empty strings. **CLI only.** |
-
 ## Return value
 
 `fetch()` resolves to an array of URL entry objects. Each object reflects the fields present in the sitemap:
@@ -65,44 +105,6 @@ const parser = new SitemapXMLParser('https://example.com/sitemap.xml', {
 All field values are arrays (xml2js convention). Use `entry.loc[0]` to get the URL string, `entry.lastmod?.[0]` for optional fields, and so on.
 
 Fields other than `loc` (`lastmod`, `changefreq`, `priority`, etc.) are included only when present in the source XML.
-
-## CLI
-
-Run without installing via `npx`:
-
-```sh
-npx sitemap-xml-parser <url> [options]
-```
-
-Or, after installing globally (`npm install -g sitemap-xml-parser`):
-
-```sh
-sitemap-xml-parser <url> [options]
-```
-
-Fetched URLs are printed to stdout, one per line. Errors are printed to stderr. See [Options](#options) for available flags.
-
-### Examples
-
-```sh
-# Print all URLs
-npx sitemap-xml-parser https://example.com/sitemap.xml
-
-# No delay, higher concurrency
-npx sitemap-xml-parser https://example.com/sitemap.xml --delay 0 --limit 10
-
-# Save URLs to a file, errors to a log
-npx sitemap-xml-parser https://example.com/sitemap.xml > urls.txt 2> errors.log
-
-# Custom timeout
-npx sitemap-xml-parser https://example.com/sitemap.xml --timeout 10000
-
-# Output as TSV (includes lastmod, changefreq, priority)
-npx sitemap-xml-parser https://example.com/sitemap.xml --tsv
-
-# Save TSV to a file
-npx sitemap-xml-parser https://example.com/sitemap.xml --tsv > urls.tsv
-```
 
 ## Limitations
 
