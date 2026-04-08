@@ -85,19 +85,6 @@ const parser = new SitemapXMLParser('https://example.com/sitemap.xml');
 })();
 ```
 
-Or with ES modules:
-
-```js
-import SitemapXMLParser from 'sitemap-xml-parser';
-
-const parser = new SitemapXMLParser('https://example.com/sitemap.xml');
-
-const urls = await parser.fetch();
-urls.forEach(entry => {
-    console.log(entry.loc);
-});
-```
-
 ### Error handling with `onError`
 
 Failed URLs (network errors, non-2xx responses, malformed XML) are skipped by default. Provide an `onError` callback to inspect them:
