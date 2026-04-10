@@ -1,6 +1,6 @@
 {
   "name": "sitemap-xml-parser",
-  "version": "1.3.1",
+  "version": "1.4.0",
   "description": "Parses sitemap XML files and returns all listed URLs. Supports sitemap index files and gzip (.gz) compression.",
   "main": "index.js",
   "types": "index.d.ts",
@@ -19,7 +19,7 @@
   "scripts": {
     "test": "node test/test.js"
   },
-  "keywords": ["sitemap", "xml", "parse", "gzip", "sitemap-index", "cli", "tsv"],
+  "keywords": ["sitemap", "xml", "parse", "gzip", "sitemap-index", "cli", "tsv", "json"],
   "author": "shinkawax",
   "license": "MIT",
   "repository": {
