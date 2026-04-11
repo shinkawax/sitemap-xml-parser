@@ -82,8 +82,7 @@ npx sitemap-xml-parser https://example.com/sitemap.xml > urls.txt 2> errors.log
 - Follows Sitemap Index files recursively, including nested indexes (Index within an Index)
 - Automatically decompresses gzip: supports both `.gz` URLs and `Content-Encoding: gzip` responses
 - Batch processing: fetches `limit` child sitemaps in parallel per batch, then waits `delay` ms after each batch completes
-- Automatically follows redirects (301/302/303/307/308) up to 5 hops; errors beyond that are reported via `onError`
-- Custom request headers via `headers` option (sent only to the original origin; stripped on cross-origin redirects)
+- Automatically follows redirects (301/302/303/307/308) up to 5 hops; errors beyond that are reported via `onError`. Custom request headers are forwarded only when the redirect stays on the same origin (same scheme, host, and port); they are stripped on cross-origin redirects.
 
 ## Usage
 

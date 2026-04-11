@@ -184,7 +184,11 @@ function parseArgs(argv) {
             if (count) return;
 
             if (format === 'json') {
-                jsonEntries.push(entry);
+                const obj = { loc: loc };
+                if (entry.lastmod)    obj.lastmod    = entry.lastmod;
+                if (entry.changefreq) obj.changefreq = entry.changefreq;
+                if (entry.priority)   obj.priority   = entry.priority;
+                jsonEntries.push(obj);
                 return;
             }
 
