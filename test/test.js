@@ -454,10 +454,10 @@ async function runTests(server) {
         assert('fetch() returns 1 entry', result.length === 1, `length=${result.length}`);
     }
 
-    // --- Test 29: CLI --tsv outputs header and tab-separated entries ---
-    console.log('\nTest 29: CLI - --tsv outputs header and entries as TSV');
+    // --- Test 29: CLI --format tsv outputs header and tab-separated entries ---
+    console.log('\nTest 29: CLI - --format tsv outputs header and entries as TSV');
     {
-        const { code, stdout, stderr } = await runCLI([`${BASE_URL}/sitemap_1.xml`, '--delay', '0', '--tsv']);
+        const { code, stdout, stderr } = await runCLI([`${BASE_URL}/sitemap_1.xml`, '--delay', '0', '--format', 'tsv']);
         assert('exits with code 0', code === 0, `code=${code}`);
         assert('no errors on stderr', !stderr.includes('Error:'), `stderr=${stderr}`);
         const lines = stdout.split('\n').slice(0, -1);
@@ -470,10 +470,10 @@ async function runTests(server) {
         assert('entry priority is correct', priority1 === '0.8', `priority=${priority1}`);
     }
 
-    // --- Test 30: CLI --tsv uses empty string for missing fields ---
-    console.log('\nTest 30: CLI - --tsv uses empty string for missing fields');
+    // --- Test 30: CLI --format tsv uses empty string for missing fields ---
+    console.log('\nTest 30: CLI - --format tsv uses empty string for missing fields');
     {
-        const { code, stdout } = await runCLI([`${BASE_URL}/sitemap_minimal.xml`, '--delay', '0', '--tsv']);
+        const { code, stdout } = await runCLI([`${BASE_URL}/sitemap_minimal.xml`, '--delay', '0', '--format', 'tsv']);
         assert('exits with code 0', code === 0, `code=${code}`);
         const lines = stdout.split('\n').slice(0, -1);
         assert('outputs 2 lines (header + 1 entry)', lines.length === 2, `lines=${lines.length}`);
@@ -533,10 +533,10 @@ async function runTests(server) {
         assert('outputs count of 1', stdout.trim() === '1', `stdout=${JSON.stringify(stdout)}`);
     }
 
-    // --- Test 35: CLI --filter --tsv outputs header and filtered entries ---
-    console.log('\nTest 35: CLI - --filter --tsv outputs filtered entries as TSV');
+    // --- Test 35: CLI --filter --format tsv outputs header and filtered entries ---
+    console.log('\nTest 35: CLI - --filter --format tsv outputs filtered entries as TSV');
     {
-        const { code, stdout } = await runCLI([`${BASE_URL}/sitemap_1.xml`, '--delay', '0', '--filter', 'page1', '--tsv']);
+        const { code, stdout } = await runCLI([`${BASE_URL}/sitemap_1.xml`, '--delay', '0', '--filter', 'page1', '--format', 'tsv']);
         assert('exits with code 0', code === 0, `code=${code}`);
         const lines = stdout.split('\n').slice(0, -1);
         assert('outputs 2 lines (header + 1 entry)', lines.length === 2, `lines=${lines.length}`);
@@ -588,6 +588,247 @@ async function runTests(server) {
         const { code, stderr } = await runCLI([`${BASE_URL}/sitemap_1.xml`, '--filter-regex']);
         assert('exits with non-zero code', code !== 0, `code=${code}`);
         assert('error says "requires a value"', stderr.includes('requires a value'), `stderr=${stderr}`);
+    }
+
+    // --- Test 41: CLI --filter-regex --count returns filtered count ---
+    console.log('\nTest 41: CLI - --filter-regex --count returns filtered count');
+    {
+        const { code, stdout } = await runCLI([`${BASE_URL}/sitemap_1.xml`, '--delay', '0', '--filter-regex', 'page1', '--count']);
+        assert('exits with code 0', code === 0, `code=${code}`);
+        assert('outputs count of 1', stdout.trim() === '1', `stdout=${JSON.stringify(stdout)}`);
+    }
+
+    // --- Test 42: CLI --filter-regex --count with no matches returns 0 ---
+    console.log('\nTest 42: CLI - --filter-regex --count with no matches returns 0');
+    {
+        const { code, stdout } = await runCLI([`${BASE_URL}/sitemap_1.xml`, '--delay', '0', '--filter-regex', '^https://other', '--count']);
+        assert('exits with code 0', code === 0, `code=${code}`);
+        assert('outputs count of 0', stdout.trim() === '0', `stdout=${JSON.stringify(stdout)}`);
+    }
+
+    // --- Test 43: headers option — custom User-Agent is sent ---
+    console.log('\nTest 43: headers option - custom User-Agent is sent');
+    {
+        let receivedUA;
+        const uaServer = await new Promise((resolve) => {
+            const xml = fs.readFileSync(path.join(MOCK_DIR, 'sitemap_1.xml'));
+            const srv = http.createServer((req, res) => {
+                receivedUA = req.headers['user-agent'];
+                res.writeHead(200, { 'Content-Type': 'application/xml' });
+                res.end(xml);
+            });
+            srv.listen(0, '127.0.0.1', () => resolve(srv));
+        });
+
+        const { port } = uaServer.address();
+        const parser = new SitemapXMLParser(`http://127.0.0.1:${port}/sitemap.xml`, {
+            delay: 0,
+            headers: { 'User-Agent': 'TestBot/9.9' },
+        });
+        await parser.fetch();
+        uaServer.close();
+        assert('custom User-Agent is sent', receivedUA === 'TestBot/9.9', `ua=${receivedUA}`);
+    }
+
+    // --- Test 44: headers option — no User-Agent is sent by default ---
+    console.log('\nTest 44: headers option - no User-Agent sent when not specified');
+    {
+        let receivedUA;
+        const uaServer = await new Promise((resolve) => {
+            const xml = fs.readFileSync(path.join(MOCK_DIR, 'sitemap_1.xml'));
+            const srv = http.createServer((req, res) => {
+                receivedUA = req.headers['user-agent'];
+                res.writeHead(200, { 'Content-Type': 'application/xml' });
+                res.end(xml);
+            });
+            srv.listen(0, '127.0.0.1', () => resolve(srv));
+        });
+
+        const { port } = uaServer.address();
+        const parser = new SitemapXMLParser(`http://127.0.0.1:${port}/sitemap.xml`, { delay: 0 });
+        await parser.fetch();
+        uaServer.close();
+        assert('no default User-Agent is added', receivedUA === undefined, `ua=${receivedUA}`);
+    }
+
+    // --- Test 45: headers option — only user-specified headers are sent ---
+    console.log('\nTest 45: headers option - only user-specified headers are sent');
+    {
+        let received = {};
+        const hdrServer = await new Promise((resolve) => {
+            const xml = fs.readFileSync(path.join(MOCK_DIR, 'sitemap_1.xml'));
+            const srv = http.createServer((req, res) => {
+                received = req.headers;
+                res.writeHead(200, { 'Content-Type': 'application/xml' });
+                res.end(xml);
+            });
+            srv.listen(0, '127.0.0.1', () => resolve(srv));
+        });
+
+        const { port } = hdrServer.address();
+        const parser = new SitemapXMLParser(`http://127.0.0.1:${port}/sitemap.xml`, {
+            delay: 0,
+            headers: { 'User-Agent': 'MyBot/1.0', 'X-Custom': 'hello' },
+        });
+        await parser.fetch();
+        hdrServer.close();
+        assert('specified User-Agent is sent', received['user-agent'] === 'MyBot/1.0', `ua=${received['user-agent']}`);
+        assert('extra header is sent', received['x-custom'] === 'hello', `x-custom=${received['x-custom']}`);
+    }
+
+    // --- Test 46: cap — limits entries from a single urlset ---
+    console.log('\nTest 46: cap - limits entries from a single urlset');
+    {
+        const parser = new SitemapXMLParser(`${BASE_URL}/sitemap_1.xml`, { delay: 0, cap: 1 });
+        const result = await parser.fetch();
+        assert('returns at most 1 entry', result.length === 1, `length=${result.length}`);
+        assert('first entry is correct', result[0].loc === 'https://example.com/page1');
+    }
+
+    // --- Test 47: cap — limits entries across sitemap index ---
+    console.log('\nTest 47: cap - limits entries across sitemap index');
+    {
+        prepareIndexXml();
+        const parser = new SitemapXMLParser(`${BASE_URL}/sitemap_index_resolved.xml`, { delay: 0, cap: 2 });
+        const result = await parser.fetch();
+        assert('returns at most 2 entries', result.length <= 2, `length=${result.length}`);
+    }
+
+    // --- Test 48: cap — onEntry only fires for collected entries ---
+    console.log('\nTest 48: cap - onEntry only fires for collected entries');
+    {
+        const seen = [];
+        const parser = new SitemapXMLParser(`${BASE_URL}/sitemap_1.xml`, {
+            delay: 0,
+            cap: 1,
+            onEntry: (entry) => seen.push(entry),
+        });
+        const result = await parser.fetch();
+        assert('onEntry fired only once', seen.length === 1, `count=${seen.length}`);
+        assert('fetch() result matches onEntry count', result.length === 1, `length=${result.length}`);
+    }
+
+    // --- Test 49: CLI --format json outputs valid JSON array ---
+    console.log('\nTest 49: CLI - --format json outputs valid JSON array');
+    {
+        const { code, stdout, stderr } = await runCLI([`${BASE_URL}/sitemap_1.xml`, '--delay', '0', '--format', 'json']);
+        assert('exits with code 0', code === 0, `code=${code}`);
+        assert('no errors on stderr', !stderr.includes('Error:'), `stderr=${stderr}`);
+        let parsed;
+        try { parsed = JSON.parse(stdout); } catch (e) { parsed = null; }
+        assert('stdout is valid JSON', parsed !== null);
+        assert('JSON is an array of 2 entries', Array.isArray(parsed) && parsed.length === 2, `length=${parsed?.length}`);
+        assert('first entry has loc', parsed?.[0]?.loc === 'https://example.com/page1');
+        assert('first entry has lastmod', parsed?.[0]?.lastmod === '2024-01-01');
+    }
+
+    // --- Test 50: CLI --format json respects --filter ---
+    console.log('\nTest 50: CLI - --format json respects --filter');
+    {
+        const { code, stdout } = await runCLI([`${BASE_URL}/sitemap_1.xml`, '--delay', '0', '--format', 'json', '--filter', 'page1']);
+        assert('exits with code 0', code === 0, `code=${code}`);
+        const parsed = JSON.parse(stdout);
+        assert('filtered JSON has 1 entry', parsed.length === 1, `length=${parsed.length}`);
+        assert('entry is page1', parsed[0].loc === 'https://example.com/page1');
+    }
+
+    // --- Test 51: CLI --format with invalid value exits non-zero ---
+    console.log('\nTest 51: CLI - --format with invalid value exits non-zero');
+    {
+        const { code, stderr } = await runCLI([`${BASE_URL}/sitemap_1.xml`, '--format', 'xml']);
+        assert('exits with non-zero code', code !== 0, `code=${code}`);
+        assert('error mentions --format', stderr.includes('--format'), `stderr=${stderr}`);
+    }
+
+    // --- Test 52: CLI --cap limits output ---
+    console.log('\nTest 52: CLI - --cap limits output');
+    {
+        const { code, stdout, stderr } = await runCLI([`${BASE_URL}/sitemap_1.xml`, '--delay', '0', '--cap', '1']);
+        assert('exits with code 0', code === 0, `code=${code}`);
+        assert('no errors on stderr', !stderr.includes('Error:'), `stderr=${stderr}`);
+        const lines = stdout.trim().split('\n');
+        assert('outputs at most 1 URL', lines.length === 1, `lines=${lines.length}`);
+    }
+
+    // --- Test 53: CLI --cap with invalid value exits non-zero ---
+    console.log('\nTest 53: CLI - invalid --cap value');
+    {
+        const { code, stderr } = await runCLI([`${BASE_URL}/sitemap_1.xml`, '--cap', '0']);
+        assert('exits with non-zero code', code !== 0, `code=${code}`);
+        assert('error message mentions --cap', stderr.includes('--cap'), `stderr=${stderr}`);
+    }
+
+    // --- Test 54: CLI --cap without value exits non-zero ---
+    console.log('\nTest 54: CLI - --cap without value exits non-zero');
+    {
+        const { code, stderr } = await runCLI([`${BASE_URL}/sitemap_1.xml`, '--cap']);
+        assert('exits with non-zero code', code !== 0, `code=${code}`);
+        assert('error says "requires a value"', stderr.includes('requires a value'), `stderr=${stderr}`);
+    }
+
+    // --- Test 55: CLI --header sends custom header ---
+    console.log('\nTest 55: CLI - --header sends custom header');
+    {
+        let receivedUA;
+        const hdrServer = await new Promise((resolve) => {
+            const xml = fs.readFileSync(path.join(MOCK_DIR, 'sitemap_1.xml'));
+            const srv = http.createServer((req, res) => {
+                receivedUA = req.headers['user-agent'];
+                res.writeHead(200, { 'Content-Type': 'application/xml' });
+                res.end(xml);
+            });
+            srv.listen(0, '127.0.0.1', () => resolve(srv));
+        });
+
+        const { port } = hdrServer.address();
+        const { code } = await runCLI([
+            `http://127.0.0.1:${port}/sitemap.xml`,
+            '--header', 'User-Agent: CliBot/1.0',
+        ]);
+        hdrServer.close();
+        assert('exits with code 0', code === 0, `code=${code}`);
+        assert('custom User-Agent is sent', receivedUA === 'CliBot/1.0', `ua=${receivedUA}`);
+    }
+
+    // --- Test 56: CLI --header is repeatable ---
+    console.log('\nTest 56: CLI - --header is repeatable');
+    {
+        let received = {};
+        const hdrServer = await new Promise((resolve) => {
+            const xml = fs.readFileSync(path.join(MOCK_DIR, 'sitemap_1.xml'));
+            const srv = http.createServer((req, res) => {
+                received = req.headers;
+                res.writeHead(200, { 'Content-Type': 'application/xml' });
+                res.end(xml);
+            });
+            srv.listen(0, '127.0.0.1', () => resolve(srv));
+        });
+
+        const { port } = hdrServer.address();
+        await runCLI([
+            `http://127.0.0.1:${port}/sitemap.xml`,
+            '--header', 'User-Agent: CliBot/1.0',
+            '--header', 'X-Custom: hello',
+        ]);
+        hdrServer.close();
+        assert('first header is sent', received['user-agent'] === 'CliBot/1.0', `ua=${received['user-agent']}`);
+        assert('second header is sent', received['x-custom'] === 'hello', `x-custom=${received['x-custom']}`);
+    }
+
+    // --- Test 57: CLI --header without value exits non-zero ---
+    console.log('\nTest 57: CLI - --header without value exits non-zero');
+    {
+        const { code, stderr } = await runCLI([`${BASE_URL}/sitemap_1.xml`, '--header']);
+        assert('exits with non-zero code', code !== 0, `code=${code}`);
+        assert('error says "requires a value"', stderr.includes('requires a value'), `stderr=${stderr}`);
+    }
+
+    // --- Test 58: CLI --header with invalid format exits non-zero ---
+    console.log('\nTest 58: CLI - --header with invalid format exits non-zero');
+    {
+        const { code, stderr } = await runCLI([`${BASE_URL}/sitemap_1.xml`, '--header', 'InvalidHeader']);
+        assert('exits with non-zero code', code !== 0, `code=${code}`);
+        assert('error mentions format', stderr.includes('Name: Value'), `stderr=${stderr}`);
     }
 
     // --- Summary ---
