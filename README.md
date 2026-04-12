@@ -42,8 +42,14 @@ npx sitemap-xml-parser https://example.com/sitemap.xml --filter-regex "blog/[0-9
 # Filter and count
 npx sitemap-xml-parser https://example.com/sitemap.xml --filter "blog" --count
 
-# Output as TSV
-npx sitemap-xml-parser https://example.com/sitemap.xml --format tsv > urls.tsv
+# Output as JSON (all fields)
+npx sitemap-xml-parser https://example.com/sitemap.xml --format json
+
+# Output as TSV (loc, lastmod, changefreq, priority)
+npx sitemap-xml-parser https://example.com/sitemap.xml --format tsv
+
+# Output as TSV with custom columns (e.g. image sitemap extension)
+npx sitemap-xml-parser https://example.com/sitemap.xml --format tsv --fields loc,image:image
 
 # Save URLs to a file, errors to a log
 npx sitemap-xml-parser https://example.com/sitemap.xml > urls.txt 2> errors.log
@@ -62,7 +68,8 @@ npx sitemap-xml-parser https://example.com/sitemap.xml > urls.txt 2> errors.log
 | `--header <Name: Value>`| —       | Add a request header. Repeatable. Single: `--header "User-Agent: MyBot/1.0"`. Multiple: `--header "User-Agent: MyBot/1.0" --header "Authorization: Bearer token"` |
 | `--filter <str>`        | —       | Only output URLs whose `loc` contains the given string (substring match). Can be combined with `--count` or `--format`. |
 | `--filter-regex <regex>`| —       | Only output URLs whose `loc` matches the given regular expression. Invalid patterns exit non-zero. Can be combined with `--count` or `--format`. |
-| `--format <fmt>`        | —       | Output format: `tsv` prints a header row (`loc`, `lastmod`, `changefreq`, `priority`) followed by one row per entry; `json` outputs a JSON array of entry objects. |
+| `--format <fmt>`        | —       | Output format: `tsv` prints a header row followed by one tab-separated row per entry; `json` outputs a JSON array of entry objects including all fields from the source XML. |
+| `--fields <f1,f2,...>`  | —       | Comma-separated list of fields to include in the output. Requires `--format`. For `tsv`, defaults to `loc,lastmod,changefreq,priority`. For `json`, defaults to all fields. Nested values are serialized as JSON in TSV output. |
 | `--count`               | —       | Print only the total number of URLs. |
 
 ### Library
@@ -138,7 +145,7 @@ const parser = new SitemapXMLParser('https://example.com/sitemap.xml', {
 ]
 ```
 
-`loc` is always a string. Use `entry.loc` to get the URL. Optional fields (`lastmod`, `changefreq`, `priority`) are strings when present, or `undefined` when absent from the source XML.
+`loc` is always a string. Standard fields (`lastmod`, `changefreq`, `priority`) are strings when present, or `undefined` when absent from the source XML.
 
-Fields other than `loc` (`lastmod`, `changefreq`, `priority`, etc.) are included only when present in the source XML.
+Sitemap extension fields (e.g. `image:image`, `news:news`, `video:video`) are also preserved as-is when present in the source XML. Their values reflect the structure parsed by the underlying XML parser — nested elements become objects.
 

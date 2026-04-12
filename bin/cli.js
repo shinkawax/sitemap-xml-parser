@@ -8,16 +8,19 @@ function printUsage() {
         'Usage: sitemap-xml-parser <url> [options]',
         '',
         'Options:',
-        '  --delay <ms>           Delay between batches in milliseconds (default: 1000)',
-        '  --limit <n>            Concurrent fetches per batch (default: 10)',
-        '  --timeout <ms>         Request timeout in milliseconds (default: 30000)',
-        '  --cap <n>      Stop after collecting this many URL entries',
-        '  --header <Name: Value> Add a request header (repeatable)',
-        '  --filter <str>         Only output URLs that contain <str>',
-        '  --filter-regex <regex> Only output URLs matching the given regular expression',
-        '  --format <fmt>         Output format: "tsv" or "json"',
-        '  --count                Print only the total number of URLs',
-        '  --help                 Show this help message',
+        '  --delay <ms>              Delay between batches in milliseconds (default: 1000)',
+        '  --limit <n>               Concurrent fetches per batch (default: 10)',
+        '  --timeout <ms>            Request timeout in milliseconds (default: 30000)',
+        '  --cap <n>                 Stop after collecting this many URL entries',
+        '  --header <Name: Value>    Add a request header (repeatable)',
+        '  --filter <str>            Only output URLs that contain <str>',
+        '  --filter-regex <regex>    Only output URLs matching the given regular expression',
+        '  --format <fmt>            Output format: "tsv" or "json"',
+        '  --fields <f1,f2,...>      Comma-separated fields to include in output (requires --format)',
+        '                            TSV default: loc,lastmod,changefreq,priority',
+        '                            JSON default: all fields',
+        '  --count                   Print only the total number of URLs',
+        '  --help                    Show this help message',
         '',
     ].join('\n'));
 }
@@ -27,6 +30,7 @@ function parseArgs(argv) {
     const opts = { delay: 1000, limit: 10, timeout: 30000 };
     let url = null;
     let format = null;
+    let fields = null;
     let count = false;
     let filter = null;
     let filterRegex = null;
@@ -48,6 +52,16 @@ function parseArgs(argv) {
                 process.exit(1);
             }
             format = val;
+        } else if (arg === '--fields') {
+            if (++i >= args.length) {
+                process.stderr.write(`Error: --fields requires a value\n`);
+                process.exit(1);
+            }
+            fields = args[i].split(',').map(f => f.trim()).filter(Boolean);
+            if (fields.length === 0) {
+                process.stderr.write(`Error: --fields must not be empty\n`);
+                process.exit(1);
+            }
         } else if (arg === '--count') {
             count = true;
         } else if (arg === '--filter') {
@@ -141,19 +155,34 @@ function parseArgs(argv) {
         process.exit(1);
     }
 
+    if (fields !== null && format === null) {
+        process.stderr.write(`Error: --fields requires --format\n`);
+        process.exit(1);
+    }
+
     if (Object.keys(headers).length > 0) opts.headers = headers;
 
-    return { url, opts, format, count, filter, filterRegex };
+    return { url, opts, format, fields, count, filter, filterRegex };
+}
+
+const DEFAULT_TSV_FIELDS = ['loc', 'lastmod', 'changefreq', 'priority'];
+
+function serializeField(value) {
+    if (value === undefined || value === null) return '';
+    if (typeof value === 'object') return JSON.stringify(value);
+    return String(value);
 }
 
 (async () => {
-    const { url, opts, format, count, filter, filterRegex } = parseArgs(process.argv);
+    const { url, opts, format, fields, count, filter, filterRegex } = parseArgs(process.argv);
 
     const red   = process.stderr.isTTY ? '\x1b[31m' : '';
     const reset = process.stderr.isTTY ? '\x1b[0m'  : '';
 
+    const tsvFields = format === 'tsv' ? (fields ?? DEFAULT_TSV_FIELDS) : null;
+
     if (format === 'tsv' && !count) {
-        process.stdout.write('loc\tlastmod\tchangefreq\tpriority\n');
+        process.stdout.write(tsvFields.join('\t') + '\n');
     }
 
     let hasError = false;
@@ -184,19 +213,19 @@ function parseArgs(argv) {
             if (count) return;
 
             if (format === 'json') {
-                const obj = { loc: loc };
-                if (entry.lastmod)    obj.lastmod    = entry.lastmod;
-                if (entry.changefreq) obj.changefreq = entry.changefreq;
-                if (entry.priority)   obj.priority   = entry.priority;
+                let obj;
+                if (fields) {
+                    obj = {};
+                    for (const f of fields) obj[f] = entry[f];
+                } else {
+                    obj = { ...entry };
+                }
                 jsonEntries.push(obj);
                 return;
             }
 
             if (format === 'tsv') {
-                const lastmod    = entry.lastmod    ?? '';
-                const changefreq = entry.changefreq ?? '';
-                const priority   = entry.priority   ?? '';
-                process.stdout.write(`${loc}\t${lastmod}\t${changefreq}\t${priority}\n`);
+                process.stdout.write(tsvFields.map(f => serializeField(entry[f])).join('\t') + '\n');
             } else {
                 process.stdout.write(loc + '\n');
             }

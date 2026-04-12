@@ -831,6 +831,85 @@ async function runTests(server) {
         assert('error mentions format', stderr.includes('Name: Value'), `stderr=${stderr}`);
     }
 
+    // --- Test 60: CLI --fields without --format exits non-zero ---
+    console.log('\nTest 60: CLI - --fields without --format exits non-zero');
+    {
+        const { code, stderr } = await runCLI([`${BASE_URL}/sitemap_1.xml`, '--fields', 'loc,lastmod']);
+        assert('exits with non-zero code', code !== 0, `code=${code}`);
+        assert('error mentions --fields requires --format', stderr.includes('--fields') && stderr.includes('--format'), `stderr=${stderr}`);
+    }
+
+    // --- Test 61: CLI --fields without value exits non-zero ---
+    console.log('\nTest 61: CLI - --fields without value exits non-zero');
+    {
+        const { code, stderr } = await runCLI([`${BASE_URL}/sitemap_1.xml`, '--format', 'tsv', '--fields']);
+        assert('exits with non-zero code', code !== 0, `code=${code}`);
+        assert('error says "requires a value"', stderr.includes('requires a value'), `stderr=${stderr}`);
+    }
+
+    // --- Test 62: CLI --format tsv --fields selects columns ---
+    console.log('\nTest 62: CLI - --format tsv --fields selects columns');
+    {
+        const { code, stdout } = await runCLI([`${BASE_URL}/sitemap_1.xml`, '--delay', '0', '--format', 'tsv', '--fields', 'loc,lastmod']);
+        assert('exits with code 0', code === 0, `code=${code}`);
+        const lines = stdout.split('\n').slice(0, -1);
+        assert('header has 2 columns', lines[0] === 'loc\tlastmod', `header=${JSON.stringify(lines[0])}`);
+        const fields = lines[1].split('\t');
+        assert('row has 2 columns', fields.length === 2, `fields=${JSON.stringify(fields)}`);
+        assert('loc is correct', fields[0] === 'https://example.com/page1', `loc=${fields[0]}`);
+        assert('lastmod is correct', fields[1] === '2024-01-01', `lastmod=${fields[1]}`);
+    }
+
+    // --- Test 63: CLI --format tsv --fields with extended attribute (image:image) ---
+    console.log('\nTest 63: CLI - --format tsv --fields with image:image');
+    {
+        const { code, stdout } = await runCLI([`${BASE_URL}/sitemap_image.xml`, '--delay', '0', '--format', 'tsv', '--fields', 'loc,image:image']);
+        assert('exits with code 0', code === 0, `code=${code}`);
+        const lines = stdout.split('\n').slice(0, -1);
+        assert('header has image:image column', lines[0] === 'loc\timage:image', `header=${JSON.stringify(lines[0])}`);
+        const fields = lines[1].split('\t');
+        assert('loc is correct', fields[0] === 'https://example.com/photo1', `loc=${fields[0]}`);
+        let parsed;
+        try { parsed = JSON.parse(fields[1]); } catch (e) { parsed = null; }
+        assert('image:image is JSON stringified object', parsed !== null && typeof parsed === 'object', `value=${fields[1]}`);
+        assert('image:image contains image:loc', parsed?.['image:loc'] === 'https://example.com/img/photo1.jpg');
+    }
+
+    // --- Test 64: CLI --format json without --fields outputs all attributes ---
+    console.log('\nTest 64: CLI - --format json without --fields outputs all attributes');
+    {
+        const { code, stdout } = await runCLI([`${BASE_URL}/sitemap_image.xml`, '--delay', '0', '--format', 'json']);
+        assert('exits with code 0', code === 0, `code=${code}`);
+        const parsed = JSON.parse(stdout);
+        assert('JSON has 1 entry', parsed.length === 1, `length=${parsed.length}`);
+        assert('loc is present', parsed[0].loc === 'https://example.com/photo1');
+        assert('lastmod is present', parsed[0].lastmod === '2024-06-01');
+        assert('image:image is present', parsed[0]['image:image'] !== undefined, `keys=${Object.keys(parsed[0])}`);
+    }
+
+    // --- Test 65: CLI --format json --fields selects only specified fields ---
+    console.log('\nTest 65: CLI - --format json --fields selects specified fields');
+    {
+        const { code, stdout } = await runCLI([`${BASE_URL}/sitemap_image.xml`, '--delay', '0', '--format', 'json', '--fields', 'loc,lastmod']);
+        assert('exits with code 0', code === 0, `code=${code}`);
+        const parsed = JSON.parse(stdout);
+        assert('JSON has 1 entry', parsed.length === 1, `length=${parsed.length}`);
+        assert('loc is present', parsed[0].loc === 'https://example.com/photo1');
+        assert('lastmod is present', parsed[0].lastmod === '2024-06-01');
+        assert('image:image is absent', !('image:image' in parsed[0]), `keys=${Object.keys(parsed[0])}`);
+    }
+
+    // --- Test 59: Extra attributes (e.g. image:image) are preserved in fetch() result ---
+    console.log('\nTest 59: Extra XML attributes are preserved in SitemapEntry');
+    {
+        const parser = new SitemapXMLParser(`${BASE_URL}/sitemap_image.xml`, { delay: 0 });
+        const result = await parser.fetch();
+        assert('returns 1 entry', result.length === 1, `length=${result.length}`);
+        assert('loc is correct', result[0].loc === 'https://example.com/photo1');
+        assert('lastmod is present', result[0].lastmod === '2024-06-01');
+        assert('image:image attribute is preserved', result[0]['image:image'] !== undefined, `image:image=${JSON.stringify(result[0]['image:image'])}`);
+    }
+
     // --- Summary ---
     console.log(`\n${'─'.repeat(40)}`);
     console.log(`Results: ${passed + failed} tests, ${passed} passed, ${failed} failed`);
