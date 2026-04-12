@@ -1,7 +1,7 @@
 {
   "name": "sitemap-xml-parser",
-  "version": "1.4.0",
-  "description": "Parses sitemap XML files and returns all listed URLs. Supports sitemap index files and gzip (.gz) compression.",
+  "version": "1.4.1",
+  "description": "Parses sitemap XML files and returns all listed URLs. CLI and library. Supports TSV/JSON output, filtering, sitemap index files, and gzip compression.",
   "main": "index.js",
   "types": "index.d.ts",
   "bin": {

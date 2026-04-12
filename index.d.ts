@@ -3,6 +3,7 @@ export interface SitemapEntry {
     lastmod?: string;
     changefreq?: string;
     priority?: string;
+    [key: string]: unknown;
 }
 
 export interface SitemapOptions {
