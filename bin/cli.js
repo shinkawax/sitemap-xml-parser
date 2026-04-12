@@ -19,6 +19,8 @@ function printUsage() {
         '  --fields <f1,f2,...>      Comma-separated fields to include in output (requires --format)',
         '                            TSV default: loc,lastmod,changefreq,priority',
         '                            JSON default: all fields',
+        '  --list-fields             Print all field names found across every entry, one per line',
+        '                            Cannot be combined with --format, --fields, --cap, or --count',
         '  --count                   Print only the total number of URLs',
         '  --help                    Show this help message',
         '',
@@ -32,6 +34,7 @@ function parseArgs(argv) {
     let format = null;
     let fields = null;
     let count = false;
+    let listFields = false;
     let filter = null;
     let filterRegex = null;
     const headers = {};
@@ -62,6 +65,8 @@ function parseArgs(argv) {
                 process.stderr.write(`Error: --fields must not be empty\n`);
                 process.exit(1);
             }
+        } else if (arg === '--list-fields') {
+            listFields = true;
         } else if (arg === '--count') {
             count = true;
         } else if (arg === '--filter') {
@@ -160,9 +165,28 @@ function parseArgs(argv) {
         process.exit(1);
     }
 
+    if (listFields) {
+        if (format !== null) {
+            process.stderr.write(`Error: --list-fields cannot be combined with --format\n`);
+            process.exit(1);
+        }
+        if (fields !== null) {
+            process.stderr.write(`Error: --list-fields cannot be combined with --fields\n`);
+            process.exit(1);
+        }
+        if (count) {
+            process.stderr.write(`Error: --list-fields cannot be combined with --count\n`);
+            process.exit(1);
+        }
+        if (opts.cap !== undefined) {
+            process.stderr.write(`Error: --list-fields cannot be combined with --cap\n`);
+            process.exit(1);
+        }
+    }
+
     if (Object.keys(headers).length > 0) opts.headers = headers;
 
-    return { url, opts, format, fields, count, filter, filterRegex };
+    return { url, opts, format, fields, count, listFields, filter, filterRegex };
 }
 
 const DEFAULT_TSV_FIELDS = ['loc', 'lastmod', 'changefreq', 'priority'];
@@ -174,7 +198,7 @@ function serializeField(value) {
 }
 
 (async () => {
-    const { url, opts, format, fields, count, filter, filterRegex } = parseArgs(process.argv);
+    const { url, opts, format, fields, count, listFields, filter, filterRegex } = parseArgs(process.argv);
 
     const red   = process.stderr.isTTY ? '\x1b[31m' : '';
     const reset = process.stderr.isTTY ? '\x1b[0m'  : '';
@@ -188,11 +212,12 @@ function serializeField(value) {
     let hasError = false;
     let filteredCount = 0;
     const jsonEntries = [];
+    const fieldSet = listFields ? new Set() : null;
 
     const hasFilter = filter !== null || filterRegex !== null;
 
     // onEntry is only skipped when count mode has no filter (result.length is sufficient).
-    const needsOnEntry = !count || hasFilter;
+    const needsOnEntry = !count || hasFilter || listFields;
 
     // When a filter is active, cap must apply to post-filter results.
     // Remove cap from library options and manage it via abort() in onEntry instead.
@@ -209,6 +234,11 @@ function serializeField(value) {
 
             filteredCount++;
             if (filterCapActive && filteredCount >= opts.cap) parser.abort();
+
+            if (listFields) {
+                for (const key of Object.keys(entry)) fieldSet.add(key);
+                return;
+            }
 
             if (count) return;
 
@@ -238,7 +268,9 @@ function serializeField(value) {
     });
 
     const result = await parser.fetch();
-    if (count) {
+    if (listFields) {
+        process.stdout.write([...fieldSet].join('\n') + (fieldSet.size > 0 ? '\n' : ''));
+    } else if (count) {
         process.stdout.write((hasFilter ? filteredCount : result.length) + '\n');
     } else if (format === 'json') {
         process.stdout.write(JSON.stringify(jsonEntries, null, 2) + '\n');
